@@ -1,43 +1,113 @@
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle as drizzleMysql } from "drizzle-orm/mysql2";
+import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
+import Database from "better-sqlite3";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { logger } from './_core/logger';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: any | null = null;
+let _dbType: 'mysql' | 'sqlite' | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
+// Lazily create the drizzle instance with fallback to SQLite
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (_db) return _db;
+
+  // Try MySQL first
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://')) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      logger.warn("Failed to connect to database", { error });
+      logger.info("🔄 Attempting MySQL connection...");
+      console.log("[DB] Trying MySQL connection...");
+      
+      _db = drizzleMysql(process.env.DATABASE_URL);
+      _dbType = 'mysql';
+      
+      // Test connection
+      await _db.execute('SELECT 1');
+      
+      logger.info("✅ MySQL connected successfully");
+      console.log("[DB] ✅ MySQL connected");
+      return _db;
+    } catch (error: any) {
+      logger.error("❌ MySQL connection failed", { 
+        error: error.message,
+        code: error.code,
+        errno: error.errno 
+      });
+      console.error("[DB] ❌ MySQL failed:", error.message);
       _db = null;
+      _dbType = null;
     }
   }
+
+  // Fallback to SQLite
+  try {
+    logger.info("🔄 Falling back to SQLite...");
+    console.log("[DB] Using SQLite fallback...");
+    
+    const sqlite = new Database('./data/app.db');
+    sqlite.pragma('journal_mode = WAL');
+    
+    _db = drizzleSqlite(sqlite);
+    _dbType = 'sqlite';
+    
+    logger.info("✅ SQLite connected successfully");
+    console.log("[DB] ✅ SQLite connected");
+    return _db;
+  } catch (error: any) {
+    logger.error("❌ SQLite connection failed", { error: error.message });
+    console.error("[DB] ❌ SQLite failed:", error.message);
+    _db = null;
+    _dbType = null;
+  }
+
   return _db;
 }
 
+// Get database type
+export function getDbType(): 'mysql' | 'sqlite' | null {
+  return _dbType;
+}
+
 // Lazy synchronous db instance for routers
-// Returns null if DATABASE_URL is not set (won't crash on startup)
 export function getDbSync() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (_db) return _db;
+
+  // Try MySQL first
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://')) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.error("[DB] Failed to connect:", error);
-      return null;
+      console.log("[DB] Sync: Trying MySQL...");
+      _db = drizzleMysql(process.env.DATABASE_URL);
+      _dbType = 'mysql';
+      console.log("[DB] Sync: MySQL connected");
+      return _db;
+    } catch (error: any) {
+      console.error("[DB] Sync: MySQL failed:", error.message);
+      _db = null;
+      _dbType = null;
     }
   }
+
+  // Fallback to SQLite
+  try {
+    console.log("[DB] Sync: Using SQLite fallback...");
+    const sqlite = new Database('./data/app.db');
+    sqlite.pragma('journal_mode = WAL');
+    _db = drizzleSqlite(sqlite);
+    _dbType = 'sqlite';
+    console.log("[DB] Sync: SQLite connected");
+    return _db;
+  } catch (error: any) {
+    console.error("[DB] Sync: SQLite failed:", error.message);
+    _db = null;
+    _dbType = null;
+  }
+
   return _db;
 }
 
 // Deprecated: Use getDb() or getDbSync() instead
-// This can throw if DATABASE_URL is not set
-export const db = process.env.DATABASE_URL 
-  ? drizzle(process.env.DATABASE_URL) 
-  : null as any;
+export const db = null as any;
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
@@ -89,9 +159,20 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    const dbType = getDbType();
+    if (dbType === 'mysql') {
+      await db.insert(users).values(values).onDuplicateKeyUpdate({
+        set: updateSet,
+      });
+    } else {
+      // SQLite: use INSERT OR REPLACE
+      const existing = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
+      if (existing.length > 0) {
+        await db.update(users).set(updateSet).where(eq(users.openId, user.openId));
+      } else {
+        await db.insert(users).values(values);
+      }
+    }
   } catch (error) {
     logger.error("Failed to upsert user", error);
     throw error;
