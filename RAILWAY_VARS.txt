@@ -1,0 +1,27 @@
+# ========================================
+# VARIÁVEIS PARA CONFIGURAR NO RAILWAY
+# ========================================
+# Copie e cole estas variáveis em:
+# Railway → Seu Projeto → Settings → Variables
+# ========================================
+
+JWT_SECRET=OB8gKltPf6Rk7kEHl60VsdJSRtCecVhcf4djh0a3wcfkVw3zZa9PFpke8zGOvepy
+
+ENCRYPTION_KEY=J+qaexwRJODFymKSBrJJpMi8gjNrU7fZMhpEJxoPL2wPCMaVGf8HWEG8pHGHQoCS
+
+NODE_ENV=production
+
+PORT=3000
+
+# DATABASE_URL será gerado automaticamente pelo MySQL plugin
+# Não precisa adicionar manualmente
+
+# ========================================
+# INSTRUÇÕES:
+# ========================================
+# 1. Acesse: https://railway.app
+# 2. Vá para seu projeto: Elevador-Lucr-sia
+# 3. Clique em "Settings" → "Variables"
+# 4. Adicione cada variável acima (uma por vez)
+# 5. Clique em "Deploy" para aplicar
+# ========================================
