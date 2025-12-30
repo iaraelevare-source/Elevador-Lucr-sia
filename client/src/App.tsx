@@ -21,6 +21,7 @@ import Register from "./pages/Register";
 import DiagnosticoElevare from "./pages/DiagnosticoElevare";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import Privacy from "./pages/Privacy";
+import LandingIntegrated from "./pages/landing-integrated";
 import Terms from "./pages/Terms";
 import SettingsLGPD from "./pages/SettingsLGPD";
 import CookieBanner from "./components/CookieBanner";
@@ -98,6 +99,7 @@ function Router() {
     <Switch>
       {/* Public Routes */}
       <Route path="/" component={Home} />
+      <Route path="/landing-integrated" component={LandingIntegrated} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
