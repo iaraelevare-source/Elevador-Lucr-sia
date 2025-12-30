@@ -1,0 +1,14 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Validar lockfile antes de commit
+if git diff --cached --name-only | grep -q "pnpm-lock.yaml"; then
+  echo "🔍 Validando pnpm-lock.yaml..."
+  
+  # Verificar duplicatas
+  if grep -o "@types/pg-pool" pnpm-lock.yaml | wc -l | grep -v "^2$"; then
+    echo "⚠️ Possível duplicata detectada em pnpm-lock.yaml"
+    echo "Execute: pnpm install para regenerar"
+    exit 1
+  fi
+fi

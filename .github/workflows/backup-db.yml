@@ -1,0 +1,47 @@
+name: Database Backup
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # Diário às 3h AM UTC
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install MySQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
+      - name: Set Backup Filename
+        id: backup_name
+        run: echo "filename=backup-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Backup MySQL
+        run: |
+          mysqldump -h ${{ secrets.DB_HOST }} \
+                    -P ${{ secrets.DB_PORT || 3306 }} \
+                    -u ${{ secrets.DB_USER }} \
+                    -p${{ secrets.DB_PASSWORD }} \
+                    ${{ secrets.DB_NAME }} \
+                    --single-transaction \
+                    --quick \
+                    --lock-tables=false \
+                    > ${{ steps.backup_name.outputs.filename }}.sql
+
+      - name: Compress Backup
+        run: |
+          gzip ${{ steps.backup_name.outputs.filename }}.sql
+
+      - name: Upload to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-backup-${{ github.run_id }}
+          path: ${{ steps.backup_name.outputs.filename }}.sql.gz
+          retention-days: 7
+
+      - name: Backup Summary
+        run: |
+          echo "✅ Backup completed successfully"
+          ls -lh ${{ steps.backup_name.outputs.filename }}.sql.gz

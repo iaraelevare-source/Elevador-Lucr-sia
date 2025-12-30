@@ -1,0 +1,33 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+build
+*.dist
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage
+coverage
+
+# Cache
+.cache
+.parcel-cache
+
+# Generated files
+drizzle/migrations
+generated-ebooks
+generated-covers
+pdf-exports

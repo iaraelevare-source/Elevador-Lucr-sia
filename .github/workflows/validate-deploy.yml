@@ -1,0 +1,40 @@
+name: Validate Deploy Configuration
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Check for duplicates in lockfile
+        run: |
+          if [ $(grep -c "@types/pg-pool@2.0.6:" pnpm-lock.yaml) -gt 1 ]; then
+            echo "ERROR: Duplicate entries in pnpm-lock.yaml"
+            exit 1
+          fi
+          
+      - name: Build
+        run: pnpm run build
+        
+      - name: Lint
+        run: pnpm run lint
+        continue-on-error: true

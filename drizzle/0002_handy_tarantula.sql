@@ -1,0 +1,1 @@
+ALTER TABLE `bioRadarDiagnosis` ADD `leadWhatsapp` varchar(20);
