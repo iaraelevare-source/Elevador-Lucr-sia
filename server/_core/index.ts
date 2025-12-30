@@ -15,6 +15,7 @@ import { serveStatic, setupVite } from "./vite";
 import { ENV, validateEnvOnStartup } from "./env";
 import { logger } from "./logger";
 import { getDb } from "../db";
+import { runMigrations } from "../db/migrate";
 import { initSentry, setupGlobalErrorHandlers, captureMessage } from "./sentry";
 
 // 🔐 VALIDAR VARIÁVEIS CRÍTICAS EM STARTUP
@@ -207,6 +208,14 @@ async function startServer() {
   if (process.env.NODE_ENV === 'production') {
     app.set('trust proxy', 1); // Confiar no primeiro proxy
     console.log('[Server] Trust proxy enabled for production');
+  }
+
+  // ==================== DATABASE MIGRATION ====================
+  // Run migrations on startup to ensure all tables exist
+  console.log('[Server] Running database migrations...');
+  const migrationSuccess = await runMigrations();
+  if (!migrationSuccess) {
+    console.error('[Server] ⚠️ Database migrations failed, but continuing startup');
   }
 
   // ==================== HEALTH CHECK ====================
