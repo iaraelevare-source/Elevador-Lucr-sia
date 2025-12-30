@@ -1,109 +1,88 @@
 import { eq } from "drizzle-orm";
-import { drizzle as drizzleMysql } from "drizzle-orm/mysql2";
-import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { logger } from './_core/logger';
 
-let _db: any | null = null;
-let _dbType: 'mysql' | 'sqlite' | null = null;
+let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: mysql.Pool | null = null;
 
-// Lazily create the drizzle instance with fallback to SQLite
+/**
+ * Get database connection with proper MySQL2 pool
+ * This fixes the "Identifier name too long" error
+ */
 export async function getDb() {
   if (_db) return _db;
 
-  // Try MySQL first
-  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://')) {
-    try {
-      logger.info("🔄 Attempting MySQL connection...");
-      console.log("[DB] Trying MySQL connection...");
-      
-      _db = drizzleMysql(process.env.DATABASE_URL);
-      _dbType = 'mysql';
-      
-      // Test connection
-      await _db.execute('SELECT 1');
-      
-      logger.info("✅ MySQL connected successfully");
-      console.log("[DB] ✅ MySQL connected");
-      return _db;
-    } catch (error: any) {
-      logger.error("❌ MySQL connection failed", { 
-        error: error.message,
-        code: error.code,
-        errno: error.errno 
-      });
-      console.error("[DB] ❌ MySQL failed:", error.message);
-      _db = null;
-      _dbType = null;
-    }
+  if (!process.env.DATABASE_URL) {
+    logger.warn("DATABASE_URL not set, database unavailable");
+    console.log("[DB] ⚠️ DATABASE_URL not set");
+    return null;
   }
 
-  // Fallback to SQLite
   try {
-    logger.info("🔄 Falling back to SQLite...");
-    console.log("[DB] Using SQLite fallback...");
+    logger.info("🔄 Creating MySQL connection pool...");
+    console.log("[DB] 🔄 Creating MySQL pool...");
     
-    const sqlite = new Database('./data/app.db');
-    sqlite.pragma('journal_mode = WAL');
+    // Create MySQL2 pool with proper configuration
+    _pool = mysql.createPool({
+      uri: process.env.DATABASE_URL,
+      connectionLimit: 10,
+      waitForConnections: true,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
+    });
     
-    _db = drizzleSqlite(sqlite);
-    _dbType = 'sqlite';
+    // Test connection
+    const connection = await _pool.getConnection();
+    await connection.ping();
+    connection.release();
     
-    logger.info("✅ SQLite connected successfully");
-    console.log("[DB] ✅ SQLite connected");
+    // Create Drizzle instance with pool
+    _db = drizzle(_pool);
+    
+    logger.info("✅ MySQL pool created and tested successfully");
+    console.log("[DB] ✅ MySQL connected via pool");
     return _db;
+    
   } catch (error: any) {
-    logger.error("❌ SQLite connection failed", { error: error.message });
-    console.error("[DB] ❌ SQLite failed:", error.message);
+    logger.error("❌ MySQL connection failed", { 
+      error: error.message,
+      code: error.code,
+      errno: error.errno 
+    });
+    console.error("[DB] ❌ MySQL failed:", error.message);
+    
+    // Clean up on error
+    if (_pool) {
+      await _pool.end().catch(() => {});
+      _pool = null;
+    }
     _db = null;
-    _dbType = null;
+    return null;
   }
-
-  return _db;
 }
 
-// Get database type
-export function getDbType(): 'mysql' | 'sqlite' | null {
-  return _dbType;
-}
-
-// Lazy synchronous db instance for routers
+/**
+ * Synchronous database getter (for routers)
+ * Returns null if not yet initialized
+ */
 export function getDbSync() {
-  if (_db) return _db;
-
-  // Try MySQL first
-  if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql://')) {
-    try {
-      console.log("[DB] Sync: Trying MySQL...");
-      _db = drizzleMysql(process.env.DATABASE_URL);
-      _dbType = 'mysql';
-      console.log("[DB] Sync: MySQL connected");
-      return _db;
-    } catch (error: any) {
-      console.error("[DB] Sync: MySQL failed:", error.message);
-      _db = null;
-      _dbType = null;
-    }
-  }
-
-  // Fallback to SQLite
-  try {
-    console.log("[DB] Sync: Using SQLite fallback...");
-    const sqlite = new Database('./data/app.db');
-    sqlite.pragma('journal_mode = WAL');
-    _db = drizzleSqlite(sqlite);
-    _dbType = 'sqlite';
-    console.log("[DB] Sync: SQLite connected");
-    return _db;
-  } catch (error: any) {
-    console.error("[DB] Sync: SQLite failed:", error.message);
-    _db = null;
-    _dbType = null;
-  }
-
   return _db;
+}
+
+/**
+ * Close database connection pool
+ */
+export async function closeDb() {
+  if (_pool) {
+    logger.info("Closing MySQL pool...");
+    await _pool.end();
+    _pool = null;
+    _db = null;
+  }
 }
 
 // Deprecated: Use getDb() or getDbSync() instead
@@ -159,20 +138,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    const dbType = getDbType();
-    if (dbType === 'mysql') {
-      await db.insert(users).values(values).onDuplicateKeyUpdate({
-        set: updateSet,
-      });
-    } else {
-      // SQLite: use INSERT OR REPLACE
-      const existing = await db.select().from(users).where(eq(users.openId, user.openId)).limit(1);
-      if (existing.length > 0) {
-        await db.update(users).set(updateSet).where(eq(users.openId, user.openId));
-      } else {
-        await db.insert(users).values(values);
-      }
-    }
+    await db.insert(users).values(values).onDuplicateKeyUpdate({
+      set: updateSet,
+    });
   } catch (error) {
     logger.error("Failed to upsert user", error);
     throw error;
