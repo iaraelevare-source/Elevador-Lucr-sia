@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import Stripe from "stripe";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import simpleAuthRouter from "../routes/simple-auth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -402,6 +403,9 @@ async function startServer() {
 
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  
+  // Simple email/password authentication
+  app.use("/api/simple-auth", simpleAuthRouter);
 
   // ==================== tRPC API ====================
   app.use(
